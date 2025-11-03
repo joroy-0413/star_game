@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>별자리 전쟁: 중앙 전투판</title>
+<style>
+body { margin:0; font-family: 'Arial', sans-serif; background:#0b0b2b; color:#fff; text-align:center; overflow-x:hidden; }
+h1 { margin-top:20px; color:#f9d71c; text-shadow:0 0 5px #fff; }
+#scoreBoard { margin:20px; font-size:20px; }
+#handArea { display:flex; justify-content:center; margin:20px; }
+.card { width:120px; height:180px; margin:5px; background:#1a1a3b; border-radius:15px; border:2px solid #fff; padding:10px; box-shadow:0 0 10px #fff; transition: transform 0.3s; position:relative; }
+.card:hover { transform: translateY(-10px) scale(1.05); cursor:pointer; box-shadow:0 0 20px #f9d71c; }
+.card h3 { margin:10px 0 5px 0; font-size:16px; }
+#battleArea { position:relative; height:300px; margin:20px; }
+.battleCard { width:150px; height:220px; position:absolute; top:20px; transition: all 0.5s; border-radius:15px; border:2px solid #fff; padding:10px; background:#1a1a3b; box-shadow:0 0 15px #fff; }
+#playerBattle { left:calc(50% - 180px); }
+#compBattle { left:calc(50% + 30px); }
+#diceArea { position:absolute; top:100px; left:50%; transform:translateX(-50%); display:flex; justify-content:center; align-items:center; }
+.dice { font-size:50px; display:inline-block; width:60px; height:60px; line-height:60px; border-radius:10px; background:#fff; color:#000; margin:5px; font-weight:bold; }
+#log { position:absolute; bottom:0; left:50%; transform:translateX(-50%); width:90%; max-width:600px; background:#111133; padding:10px; border-radius:10px 10px 0 0; height:180px; overflow-y:auto; text-align:left; font-size:14px; }
+.flash { animation: flash 0.6s; }
+@keyframes flash {0%{background-color:#1a1a3b;}50%{background-color:#ff0000;}100%{background-color:#1a1a3b;}}
+.goldFlash { animation: goldFlash 0.8s; }
+@keyframes goldFlash {0%{background-color:#1a1a3b;}50%{background-color:#f9d71c;}100%{background-color:#1a1a3b;}}
+</style>
+</head>
+<body>
+<h1>별자리 전쟁: 중앙 전투판</h1>
+<div id="scoreBoard">점수: <span id="playerScore">0</span> : <span id="computerScore">0</span></div>
+
+<div id="handArea"></div>
+
+<div id="battleArea">
+  <div id="playerBattle" class="battleCard"></div>
+  <div id="compBattle" class="battleCard"></div>
+  <div id="diceArea">
+    <div id="playerDice" class="dice">🎲</div>
+    <div id="compDice" class="dice">🎲</div>
+  </div>
+</div>
+
+<div id="log"></div>
+
+<script>
+const allCards=[
+{name:'양자리', ability:'+1 공격'},
+{name:'황소자리', ability:'첫 패배 무효'},
+{name:'쌍둥이자리', ability:'주사위 두 번 굴려 높은 수 선택'},
+{name:'게자리', ability:'패배해도 1번 더 사용'},
+{name:'사자자리', ability:'승리 시 다음 턴 +1'},
+{name:'처녀자리', ability:'상대 주사위 1회 무효화'},
+{name:'천칭자리', ability:'무승부 시 승리'},
+{name:'전갈자리', ability:'패배 시 상대 다음 턴 -1'},
+{name:'사수자리', ability:'주사위 1회 재굴림 가능'},
+{name:'염소자리', ability:'2연패 후 +2'},
+{name:'물병자리', ability:'카드 교체 가능'},
+{name:'물고기자리', ability:'상대 예측 성공 시 승리'}
+];
+
+let playerHand=[], computerHand=[];
+let playerScore=0, computerScore=0;
+let round=1;
+let playerNextBonus=0, computerNextBonus=0;
+
+function shuffle(array){return array.sort(()=>Math.random()-0.5);}
+function deal(){
+  const shuffled=shuffle([...allCards]);
+  playerHand=shuffled.slice(0,3);
+  computerHand=shuffled.slice(3,6);
+  logMsg('게임 시작! 카드 선택하세요.');
+  updateHand();
+  clearBattle();
+}
+
+function updateHand(){
+  const container=document.getElementById('handArea');
+  container.innerHTML='';
+  playerHand.forEach((card,idx)=>{
+    const div=document.createElement('div');
+    div.className='card';
+    div.innerHTML=`<h3>${card.name}</h3><p>${card.ability}</p><button onclick="playCard(${idx})">선택</button>`;
+    container.appendChild(div);
+  });
+}
+
+function clearBattle(){
+  document.getElementById('playerBattle').innerHTML='';
+  document.getElementById('compBattle').innerHTML='';
+  document.getElementById('playerDice').textContent='🎲';
+  document.getElementById('compDice').textContent='🎲';
+}
+
+function rollDiceVisual(id, callback){
+  const diceEl=document.getElementById(id);
+  let count=0;
+  const interval=setInterval(()=>{
+    const roll=Math.floor(Math.random()*6)+1;
+    diceEl.textContent=roll;
+    count++;
+    if(count>=10){ clearInterval(interval); callback(roll);}
+  },50);
+}
+
+function playCard(idx){
+  const playerCard=playerHand[idx];
+  const compIdx=Math.floor(Math.random()*computerHand.length);
+  const compCard=computerHand[compIdx];
+
+  // 중앙 카드 배치
+  document.getElementById('playerBattle').innerHTML=`<h3>${playerCard.name}</h3><p>${playerCard.ability}</p>`;
+  document.getElementById('compBattle').innerHTML=`<h3>${compCard.name}</h3>`;
+  logMsg(`라운드 ${round}: 너 - ${playerCard.name} vs 컴퓨터 - ${compCard.name}`);
+
+  // 2초 대기 후 주사위 굴림 및 승패 처리
+  setTimeout(()=>{
+    rollDiceVisual('playerDice', (playerRoll)=>{
+      rollDiceVisual('compDice', (compRoll)=>{
+
+        // 능력 적용
+        if(playerCard.name==='쌍둥이자리'){ const r=Math.floor(Math.random()*6)+1; playerRoll=Math.max(playerRoll,r);}
+        if(playerCard.name==='사수자리'){ const r=Math.floor(Math.random()*6)+1; playerRoll=Math.max(playerRoll,r);}
+        if(playerCard.name==='양자리') playerRoll+=1;
+        playerRoll+=playerNextBonus; playerNextBonus=0;
+
+        if(compCard.name==='양자리') compRoll+=1;
+        compRoll+=computerNextBonus; computerNextBonus=0;
+
+        let winner='';
+        // 물고기자리 50% 예측 성공
+        if(playerCard.name==='물고기자리' && Math.random()<0.5){ winner='player'; logMsg('물고기자리 예측 성공! 즉시 승리!'); flashCard('playerBattle','goldFlash'); }
+        else if(compCard.name==='물고기자리' && Math.random()<0.5){ winner='computer'; logMsg('컴퓨터 물고기자리 예측 성공!'); flashCard('compBattle','goldFlash'); }
+        else{
+          if(playerRoll>compRoll) winner='player';
+          else if(playerRoll<compRoll) winner='computer';
+          else{ if(playerCard.name==='천칭자리') winner='player'; else if(compCard.name==='천칭자리') winner='computer'; else winner='draw'; }
+        }
+
+        // 전갈자리
+        if(playerCard.name==='전갈자리' && winner==='computer') computerNextBonus-=1;
+        if(compCard.name==='전갈자리' && winner==='player') playerNextBonus-=1;
+
+        // 사자자리
+        if(playerCard.name==='사자자리' && winner==='player') playerNextBonus+=1;
+        if(compCard.name==='사자자리' && winner==='computer') computerNextBonus+=1;
+
+        // 게자리
+        if(compCard.name==='게자리' && winner==='player') winner='draw';
+        if(playerCard.name==='게자리' && winner==='computer') winner='draw';
+
+        // 승패 2초 대기 후 처리
+        setTimeout(()=>{
+          if(winner==='player'){ playerScore++; logMsg('너가 승리!'); flashCard('playerBattle','goldFlash');}
+          else if(winner==='computer'){ computerScore++; logMsg('컴퓨터 승리!'); flashCard('compBattle','goldFlash');}
+          else logMsg('무승부!');
+
+          document.getElementById('playerScore').innerText=playerScore;
+          document.getElementById('computerScore').innerText=computerScore;
+
+          // 카드 교체
+          playerHand.splice(idx,1); playerHand.push(allCards[Math.floor(Math.random()*allCards.length)]);
+          computerHand.splice(compIdx,1); computerHand.push(allCards[Math.floor(Math.random()*allCards.length)]);
+
+          round++;
+          updateHand();
+          clearBattle();
+
+          if(round>5){
+            if(playerScore>computerScore) logMsg('게임 종료! 🎉 너 승리!');
+            else if(playerScore<computerScore) logMsg('게임 종료! 😢 컴퓨터 승리!');
+            else logMsg('게임 종료! 무승부!');
+          }
+        },2000);
+
+      });
+    });
+  },2000);
+}
+
+function logMsg(msg){
+  const log=document.getElementById('log');
+  log.innerHTML+=msg+'<br>';
+  log.scrollTop=log.scrollHeight;
+}
+
+function flashCard(id,className){
+  const el=document.getElementById(id);
+  if(el){
+    el.classList.add(className);
+    setTimeout(()=>el.classList.remove(className),800);
+  }
+}
+
+deal();
+</script>
+</body>
+</html>
